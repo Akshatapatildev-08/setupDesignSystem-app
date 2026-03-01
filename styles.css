@@ -3,6 +3,8 @@
   --color-text: #111111;
   --color-accent: #8b0000;
   --color-muted: #6d695f;
+  --color-success: #5f7a65;
+  --color-warning: #8a6f3b;
 
   --font-heading: "Newsreader", Georgia, serif;
   --font-body: "Manrope", "Segoe UI", sans-serif;
@@ -183,6 +185,37 @@ a {
   font: inherit;
 }
 
+.fieldset {
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+}
+
+.fieldset legend {
+  padding: 0 var(--space-1);
+}
+
+.checkbox-group {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.checkbox-group label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.muted-inline {
+  margin-top: var(--space-2);
+}
+
 .btn {
   display: inline-block;
   border: 1px solid transparent;
@@ -247,6 +280,11 @@ a {
   margin: 0;
 }
 
+.job-card__row {
+  display: flex;
+  justify-content: flex-start;
+}
+
 .source-badge {
   border: var(--border);
   border-radius: var(--radius);
@@ -274,6 +312,54 @@ a {
 .btn-secondary.is-saved {
   border-color: var(--color-accent);
   color: var(--color-accent);
+}
+
+.filter-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.toggle-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  grid-column: 1 / -1;
+}
+
+.notice-banner {
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.match-badge {
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-2);
+  border: var(--border);
+  font-size: 0.9rem;
+}
+
+.match-badge--high {
+  color: var(--color-success);
+  border-color: var(--color-success);
+}
+
+.match-badge--mid {
+  color: var(--color-warning);
+  border-color: var(--color-warning);
+}
+
+.match-badge--base {
+  color: var(--color-text);
+  border-color: var(--color-muted);
+}
+
+.match-badge--low {
+  color: var(--color-muted);
+  border-color: var(--color-muted);
 }
 
 .modal-overlay {

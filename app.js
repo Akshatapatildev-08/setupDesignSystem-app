@@ -7,9 +7,34 @@
   "/proof": { title: "Proof", key: "proof", notFound: false }
 };
 
-const STORAGE_KEY = "jobNotificationTracker.savedJobIds";
+const SAVED_STORAGE_KEY = "jobNotificationTracker.savedJobIds";
+const PREFERENCES_STORAGE_KEY = "jobTrackerPreferences";
 const jobs = Array.isArray(window.jobsData) ? window.jobsData : [];
 const jobsById = new Map(jobs.map((job) => [job.id, job]));
+
+const defaultPreferences = {
+  roleKeywords: [],
+  preferredLocations: [],
+  preferredMode: [],
+  experienceLevel: "",
+  skills: [],
+  minMatchScore: 40
+};
+
+const dashboardState = {
+  preferences: null,
+  preferencesConfigured: false,
+  scoresById: new Map(),
+  showOnlyMatches: false,
+  filters: {
+    keyword: "",
+    location: "",
+    mode: "",
+    experience: "",
+    source: ""
+  },
+  sortBy: "latest"
+};
 
 const routeView = document.querySelector("#route-view");
 const menuToggle = document.querySelector(".menu-toggle");
@@ -41,9 +66,20 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function parseCommaSeparated(value) {
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function normalizeValue(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function getSavedJobIds() {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(SAVED_STORAGE_KEY);
     if (!raw) {
       return [];
     }
@@ -56,7 +92,7 @@ function getSavedJobIds() {
 }
 
 function setSavedJobIds(ids) {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+  window.localStorage.setItem(SAVED_STORAGE_KEY, JSON.stringify(ids));
 }
 
 function isJobSaved(id) {
@@ -76,6 +112,44 @@ function toggleSaveJob(id) {
   return true;
 }
 
+function loadPreferences() {
+  try {
+    const raw = window.localStorage.getItem(PREFERENCES_STORAGE_KEY);
+    if (!raw) {
+      return { ...defaultPreferences };
+    }
+
+    const parsed = JSON.parse(raw);
+    return {
+      roleKeywords: Array.isArray(parsed.roleKeywords) ? parsed.roleKeywords : [],
+      preferredLocations: Array.isArray(parsed.preferredLocations) ? parsed.preferredLocations : [],
+      preferredMode: Array.isArray(parsed.preferredMode) ? parsed.preferredMode : [],
+      experienceLevel: typeof parsed.experienceLevel === "string" ? parsed.experienceLevel : "",
+      skills: Array.isArray(parsed.skills) ? parsed.skills : [],
+      minMatchScore:
+        Number.isFinite(parsed.minMatchScore) && parsed.minMatchScore >= 0 && parsed.minMatchScore <= 100
+          ? parsed.minMatchScore
+          : 40
+    };
+  } catch (error) {
+    return { ...defaultPreferences };
+  }
+}
+
+function savePreferences(preferences) {
+  window.localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
+}
+
+function hasConfiguredPreferences(preferences) {
+  return (
+    preferences.roleKeywords.length > 0 ||
+    preferences.preferredLocations.length > 0 ||
+    preferences.preferredMode.length > 0 ||
+    preferences.experienceLevel !== "" ||
+    preferences.skills.length > 0
+  );
+}
+
 function formatPostedDaysAgo(days) {
   if (days === 0) {
     return "Posted today";
@@ -88,43 +162,357 @@ function formatPostedDaysAgo(days) {
   return `${days} days ago`;
 }
 
-function renderDashboardCards() {
-  if (!jobs.length) {
-    return '<div class="empty-state"><p>No jobs yet. In the next step, you will load a realistic dataset.</p></div>';
+function extractSalaryScore(salaryRange) {
+  const value = String(salaryRange || "");
+  const numbers = value.match(/[\d.]+/g);
+
+  if (!numbers || numbers.length === 0) {
+    return 0;
   }
 
+  const upper = Number(numbers[numbers.length - 1]);
+
+  if (Number.isNaN(upper)) {
+    return 0;
+  }
+
+  if (value.toLowerCase().includes("month")) {
+    return (upper * 12) / 100000;
+  }
+
+  return upper;
+}
+
+function calculateMatchScore(job, preferences) {
+  let score = 0;
+
+  const title = normalizeValue(job.title);
+  const description = normalizeValue(job.description);
+  const location = normalizeValue(job.location);
+  const mode = normalizeValue(job.mode);
+  const experience = normalizeValue(job.experience);
+  const source = normalizeValue(job.source);
+  const jobSkills = (job.skills || []).map(normalizeValue);
+
+  const roleKeywords = preferences.roleKeywords.map(normalizeValue);
+  const preferredLocations = preferences.preferredLocations.map(normalizeValue);
+  const preferredMode = preferences.preferredMode.map(normalizeValue);
+  const experienceLevel = normalizeValue(preferences.experienceLevel);
+  const preferenceSkills = preferences.skills.map(normalizeValue);
+
+  if (roleKeywords.some((keyword) => keyword && title.includes(keyword))) {
+    score += 25;
+  }
+
+  if (roleKeywords.some((keyword) => keyword && description.includes(keyword))) {
+    score += 15;
+  }
+
+  if (preferredLocations.some((prefLocation) => prefLocation === location)) {
+    score += 15;
+  }
+
+  if (preferredMode.some((prefMode) => prefMode === mode)) {
+    score += 10;
+  }
+
+  if (experienceLevel && experienceLevel === experience) {
+    score += 10;
+  }
+
+  if (preferenceSkills.some((skill) => skill && jobSkills.includes(skill))) {
+    score += 15;
+  }
+
+  if (job.postedDaysAgo <= 2) {
+    score += 5;
+  }
+
+  if (source === "linkedin") {
+    score += 5;
+  }
+
+  return Math.min(score, 100);
+}
+
+function getMatchTone(score) {
+  if (score >= 80) {
+    return "match-badge--high";
+  }
+
+  if (score >= 60) {
+    return "match-badge--mid";
+  }
+
+  if (score >= 40) {
+    return "match-badge--base";
+  }
+
+  return "match-badge--low";
+}
+
+function getDashboardJobs() {
+  const filters = dashboardState.filters;
+  const keyword = normalizeValue(filters.keyword);
+
+  const filtered = jobs.filter((job) => {
+    const score = dashboardState.scoresById.get(job.id) || 0;
+
+    if (dashboardState.showOnlyMatches && score < dashboardState.preferences.minMatchScore) {
+      return false;
+    }
+
+    const searchable = `${job.title} ${job.company} ${job.description}`.toLowerCase();
+    if (keyword && !searchable.includes(keyword)) {
+      return false;
+    }
+
+    if (filters.location && normalizeValue(job.location) !== normalizeValue(filters.location)) {
+      return false;
+    }
+
+    if (filters.mode && normalizeValue(job.mode) !== normalizeValue(filters.mode)) {
+      return false;
+    }
+
+    if (filters.experience && normalizeValue(job.experience) !== normalizeValue(filters.experience)) {
+      return false;
+    }
+
+    if (filters.source && normalizeValue(job.source) !== normalizeValue(filters.source)) {
+      return false;
+    }
+
+    return true;
+  });
+
+  if (dashboardState.sortBy === "latest") {
+    filtered.sort((a, b) => a.postedDaysAgo - b.postedDaysAgo);
+  } else if (dashboardState.sortBy === "match") {
+    filtered.sort((a, b) => (dashboardState.scoresById.get(b.id) || 0) - (dashboardState.scoresById.get(a.id) || 0));
+  } else if (dashboardState.sortBy === "salary") {
+    filtered.sort((a, b) => extractSalaryScore(b.salaryRange) - extractSalaryScore(a.salaryRange));
+  }
+
+  return filtered;
+}
+
+function buildJobCard(job) {
+  const saved = isJobSaved(job.id);
+  const score = dashboardState.scoresById.get(job.id) || 0;
+
   return `
-    <div class="jobs-grid">
-      ${jobs
-        .map((job) => {
-          const saved = isJobSaved(job.id);
+    <article class="job-card" data-job-id="${job.id}">
+      <header class="job-card__header">
+        <div>
+          <h2>${escapeHtml(job.title)}</h2>
+          <p class="job-card__company">${escapeHtml(job.company)}</p>
+        </div>
+        <span class="source-badge">${escapeHtml(job.source)}</span>
+      </header>
 
-          return `
-            <article class="job-card" data-job-id="${job.id}">
-              <header class="job-card__header">
-                <div>
-                  <h2>${escapeHtml(job.title)}</h2>
-                  <p class="job-card__company">${escapeHtml(job.company)}</p>
-                </div>
-                <span class="source-badge">${escapeHtml(job.source)}</span>
-              </header>
+      <div class="job-card__row">
+        <span class="match-badge ${getMatchTone(score)}">Match ${score}</span>
+      </div>
 
-              <p class="job-card__meta">${escapeHtml(job.location)} · ${escapeHtml(job.mode)}</p>
-              <p class="job-card__meta">Experience: ${escapeHtml(job.experience)}</p>
-              <p class="job-card__meta">Salary: ${escapeHtml(job.salaryRange)}</p>
-              <p class="job-card__posted">${formatPostedDaysAgo(job.postedDaysAgo)}</p>
+      <p class="job-card__meta">${escapeHtml(job.location)} · ${escapeHtml(job.mode)}</p>
+      <p class="job-card__meta">Experience: ${escapeHtml(job.experience)}</p>
+      <p class="job-card__meta">Salary: ${escapeHtml(job.salaryRange)}</p>
+      <p class="job-card__posted">${formatPostedDaysAgo(job.postedDaysAgo)}</p>
 
-              <div class="job-card__actions">
-                <button class="btn btn-secondary" type="button" data-action="view" data-job-id="${job.id}">View</button>
-                <button class="btn btn-secondary ${saved ? "is-saved" : ""}" type="button" data-action="save" data-job-id="${job.id}">${saved ? "Saved" : "Save"}</button>
-                <a class="btn btn-primary" href="${escapeHtml(job.applyUrl)}" target="_blank" rel="noopener noreferrer">Apply</a>
-              </div>
-            </article>
-          `;
-        })
-        .join("")}
-    </div>
+      <div class="job-card__actions">
+        <button class="btn btn-secondary" type="button" data-action="view" data-job-id="${job.id}">View</button>
+        <button class="btn btn-secondary ${saved ? "is-saved" : ""}" type="button" data-action="save" data-job-id="${job.id}">${saved ? "Saved" : "Save"}</button>
+        <a class="btn btn-primary" href="${escapeHtml(job.applyUrl)}" target="_blank" rel="noopener noreferrer">Apply</a>
+      </div>
+    </article>
   `;
+}
+
+function renderDashboardList() {
+  const mount = document.querySelector("#dashboard-list");
+  if (!mount) {
+    return;
+  }
+
+  const jobsToRender = getDashboardJobs();
+
+  if (!jobsToRender.length) {
+    mount.innerHTML = `
+      <div class="empty-state">
+        <p>No roles match your criteria. Adjust filters or lower threshold.</p>
+      </div>
+    `;
+    return;
+  }
+
+  mount.innerHTML = `<div class="jobs-grid">${jobsToRender.map(buildJobCard).join("")}</div>`;
+}
+
+function bindDashboardInteractions() {
+  const listMount = document.querySelector("#dashboard-list");
+  const filterBar = document.querySelector("#dashboard-filters");
+  const showMatchesToggle = document.querySelector("#show-only-matches");
+
+  if (!listMount || !filterBar || !showMatchesToggle) {
+    return;
+  }
+
+  listMount.addEventListener("click", (event) => {
+    const actionTarget = event.target.closest("[data-action]");
+    if (!actionTarget) {
+      return;
+    }
+
+    const action = actionTarget.getAttribute("data-action");
+    const jobId = actionTarget.getAttribute("data-job-id");
+
+    if (action === "view" && jobId) {
+      openJobModal(jobId);
+      return;
+    }
+
+    if (action === "save" && jobId) {
+      const saved = toggleSaveJob(jobId);
+      actionTarget.textContent = saved ? "Saved" : "Save";
+      actionTarget.classList.toggle("is-saved", saved);
+    }
+  });
+
+  const handleFilterChange = (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) {
+      return;
+    }
+
+    if (target.name in dashboardState.filters) {
+      dashboardState.filters[target.name] = target.value;
+      renderDashboardList();
+      return;
+    }
+
+    if (target.name === "sortBy") {
+      dashboardState.sortBy = target.value;
+      renderDashboardList();
+    }
+  };
+
+  filterBar.addEventListener("input", handleFilterChange);
+  filterBar.addEventListener("change", handleFilterChange);
+
+  showMatchesToggle.addEventListener("change", () => {
+    dashboardState.showOnlyMatches = showMatchesToggle.checked;
+    renderDashboardList();
+  });
+}
+
+function renderLocationOptions(selectedValues) {
+  const locations = Array.from(new Set(jobs.map((job) => job.location))).sort((a, b) => a.localeCompare(b));
+
+  return locations
+    .map((location) => {
+      const selected = selectedValues.includes(location) ? "selected" : "";
+      return `<option value="${escapeHtml(location)}" ${selected}>${escapeHtml(location)}</option>`;
+    })
+    .join("");
+}
+
+function renderSettingsForm(preferences) {
+  const modes = ["Remote", "Hybrid", "Onsite"];
+  const experiences = ["", "Fresher", "0-1", "1-3", "3-5"];
+
+  return `
+    <form id="preferences-form" class="surface field-stack" aria-label="Job matching preferences">
+      <div class="field">
+        <label for="roleKeywords">Role keywords</label>
+        <input id="roleKeywords" name="roleKeywords" class="placeholder-input" type="text" value="${escapeHtml(preferences.roleKeywords.join(", "))}" placeholder="e.g., frontend, react, intern" />
+      </div>
+
+      <div class="field">
+        <label for="preferredLocations">Preferred locations</label>
+        <select id="preferredLocations" name="preferredLocations" class="placeholder-select" multiple size="6">
+          ${renderLocationOptions(preferences.preferredLocations)}
+        </select>
+      </div>
+
+      <fieldset class="field fieldset">
+        <legend>Preferred mode</legend>
+        <div class="checkbox-group">
+          ${modes
+            .map((mode) => {
+              const checked = preferences.preferredMode.includes(mode) ? "checked" : "";
+              return `<label><input type="checkbox" name="preferredMode" value="${mode}" ${checked} /> ${mode}</label>`;
+            })
+            .join("")}
+        </div>
+      </fieldset>
+
+      <div class="field">
+        <label for="experienceLevel">Experience level</label>
+        <select id="experienceLevel" name="experienceLevel" class="placeholder-select">
+          ${experiences
+            .map((exp) => {
+              const selected = preferences.experienceLevel === exp ? "selected" : "";
+              const label = exp === "" ? "Any" : exp;
+              return `<option value="${exp}" ${selected}>${label}</option>`;
+            })
+            .join("")}
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="skills">Skills</label>
+        <input id="skills" name="skills" class="placeholder-input" type="text" value="${escapeHtml(preferences.skills.join(", "))}" placeholder="e.g., sql, python, react" />
+      </div>
+
+      <div class="field">
+        <label for="minMatchScore">Minimum match score: <span id="min-score-value">${preferences.minMatchScore}</span></label>
+        <input id="minMatchScore" name="minMatchScore" type="range" min="0" max="100" step="1" value="${preferences.minMatchScore}" />
+      </div>
+
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Save Preferences</button>
+      </div>
+    </form>
+  `;
+}
+
+function bindSettingsForm() {
+  const form = document.querySelector("#preferences-form");
+  const slider = document.querySelector("#minMatchScore");
+  const sliderValue = document.querySelector("#min-score-value");
+  const status = document.querySelector("#preferences-status");
+
+  if (!form || !slider || !sliderValue) {
+    return;
+  }
+
+  slider.addEventListener("input", () => {
+    sliderValue.textContent = slider.value;
+  });
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+
+    const formData = new FormData(form);
+    const selectedLocationOptions = Array.from(form.querySelector("#preferredLocations").selectedOptions).map((opt) => opt.value);
+    const selectedModes = Array.from(form.querySelectorAll('input[name="preferredMode"]:checked')).map((input) => input.value);
+
+    const preferences = {
+      roleKeywords: parseCommaSeparated(String(formData.get("roleKeywords") || "")),
+      preferredLocations: selectedLocationOptions,
+      preferredMode: selectedModes,
+      experienceLevel: String(formData.get("experienceLevel") || ""),
+      skills: parseCommaSeparated(String(formData.get("skills") || "")),
+      minMatchScore: Number(formData.get("minMatchScore") || 40)
+    };
+
+    savePreferences(preferences);
+
+    if (status) {
+      status.textContent = "Preferences saved.";
+    }
+  });
 }
 
 function openJobModal(jobId) {
@@ -178,37 +566,105 @@ function closeJobModal() {
   overlay.remove();
 }
 
-function bindDashboardInteractions() {
-  const viewButtons = document.querySelectorAll('[data-action="view"]');
-  const saveButtons = document.querySelectorAll('[data-action="save"]');
+function renderDashboard(preferences) {
+  dashboardState.preferences = preferences;
+  dashboardState.preferencesConfigured = hasConfiguredPreferences(preferences);
+  dashboardState.scoresById = new Map(jobs.map((job) => [job.id, calculateMatchScore(job, preferences)]));
 
-  viewButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      const jobId = button.getAttribute("data-job-id");
-      if (jobId) {
-        openJobModal(jobId);
-      }
-    });
-  });
+  const locations = Array.from(new Set(jobs.map((job) => job.location))).sort((a, b) => a.localeCompare(b));
+  const modes = ["", "Remote", "Hybrid", "Onsite"];
+  const experiences = ["", "Fresher", "0-1", "1-3", "3-5"];
+  const sources = ["", "LinkedIn", "Naukri", "Indeed"];
 
-  saveButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      const jobId = button.getAttribute("data-job-id");
-      if (!jobId) {
-        return;
-      }
+  routeView.innerHTML = `
+    <section class="page page--wide" aria-labelledby="page-title">
+      <h1 id="page-title">Dashboard</h1>
+      <p class="lead">Fresh opportunities aligned to your preferences.</p>
 
-      const saved = toggleSaveJob(jobId);
-      button.textContent = saved ? "Saved" : "Save";
-      button.classList.toggle("is-saved", saved);
-    });
-  });
+      ${dashboardState.preferencesConfigured ? "" : '<div class="notice-banner">Set your preferences to activate intelligent matching.</div>'}
 
+      <section id="dashboard-filters" class="surface filter-bar" aria-label="Filter and sort jobs">
+        <div class="field">
+          <label for="keyword">Keyword search</label>
+          <input id="keyword" name="keyword" class="placeholder-input" type="text" value="${escapeHtml(dashboardState.filters.keyword)}" />
+        </div>
+
+        <div class="field">
+          <label for="locationFilter">Location</label>
+          <select id="locationFilter" name="location" class="placeholder-select">
+            <option value="">All</option>
+            ${locations
+              .map((location) => {
+                const selected = dashboardState.filters.location === location ? "selected" : "";
+                return `<option value="${escapeHtml(location)}" ${selected}>${escapeHtml(location)}</option>`;
+              })
+              .join("")}
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="modeFilter">Mode</label>
+          <select id="modeFilter" name="mode" class="placeholder-select">
+            ${modes
+              .map((mode) => {
+                const selected = dashboardState.filters.mode === mode ? "selected" : "";
+                return `<option value="${mode}" ${selected}>${mode || "All"}</option>`;
+              })
+              .join("")}
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="experienceFilter">Experience</label>
+          <select id="experienceFilter" name="experience" class="placeholder-select">
+            ${experiences
+              .map((exp) => {
+                const selected = dashboardState.filters.experience === exp ? "selected" : "";
+                return `<option value="${exp}" ${selected}>${exp || "All"}</option>`;
+              })
+              .join("")}
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="sourceFilter">Source</label>
+          <select id="sourceFilter" name="source" class="placeholder-select">
+            ${sources
+              .map((source) => {
+                const selected = dashboardState.filters.source === source ? "selected" : "";
+                return `<option value="${source}" ${selected}>${source || "All"}</option>`;
+              })
+              .join("")}
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="sortBy">Sort by</label>
+          <select id="sortBy" name="sortBy" class="placeholder-select">
+            <option value="latest" ${dashboardState.sortBy === "latest" ? "selected" : ""}>Latest</option>
+            <option value="match" ${dashboardState.sortBy === "match" ? "selected" : ""}>Match Score</option>
+            <option value="salary" ${dashboardState.sortBy === "salary" ? "selected" : ""}>Salary</option>
+          </select>
+        </div>
+
+        <label class="toggle-row">
+          <input id="show-only-matches" type="checkbox" ${dashboardState.showOnlyMatches ? "checked" : ""} />
+          Show only jobs above my threshold
+        </label>
+      </section>
+
+      <section id="dashboard-list" aria-live="polite"></section>
+    </section>
+  `;
+
+  bindDashboardInteractions();
+  renderDashboardList();
 }
 
 function renderRoute(pathname) {
   const normalized = normalizePath(pathname);
   const route = getRoute(normalized);
+  const preferences = loadPreferences();
 
   if (route.notFound) {
     routeView.innerHTML = `
@@ -229,40 +685,14 @@ function renderRoute(pathname) {
     routeView.innerHTML = `
       <section class="page" aria-labelledby="page-title">
         <h1 id="page-title">Settings</h1>
-        <p class="lead">This section will be built in the next step.</p>
-        <div class="surface field-stack" aria-label="Preference placeholders">
-          <div class="field">
-            <label>Role keywords</label>
-            <input class="placeholder-input" type="text" value="e.g., Product Designer, Frontend Engineer" readonly />
-          </div>
-          <div class="field">
-            <label>Preferred locations</label>
-            <input class="placeholder-input" type="text" value="e.g., Bengaluru, Mumbai, Remote" readonly />
-          </div>
-          <div class="field">
-            <label>Mode (Remote / Hybrid / Onsite)</label>
-            <select class="placeholder-select" disabled>
-              <option>Remote</option>
-              <option>Hybrid</option>
-              <option>Onsite</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Experience level</label>
-            <input class="placeholder-input" type="text" value="e.g., 2-4 years" readonly />
-          </div>
-        </div>
+        <p class="lead">Set your targeting preferences for deterministic matching.</p>
+        ${renderSettingsForm(preferences)}
+        <p id="preferences-status" class="muted-inline"></p>
       </section>
     `;
+    bindSettingsForm();
   } else if (route.key === "dashboard") {
-    routeView.innerHTML = `
-      <section class="page page--wide" aria-labelledby="page-title">
-        <h1 id="page-title">Dashboard</h1>
-        <p class="lead">Fresh opportunities aligned to your preferences.</p>
-        ${renderDashboardCards()}
-      </section>
-    `;
-    bindDashboardInteractions();
+    renderDashboard(preferences);
   } else if (route.key === "saved") {
     routeView.innerHTML = `
       <section class="page" aria-labelledby="page-title">
@@ -336,10 +766,8 @@ document.addEventListener("click", (event) => {
     if (href && href.startsWith("/")) {
       event.preventDefault();
       navigateTo(href);
-      return;
     }
   }
-
 });
 
 document.addEventListener("keydown", (event) => {
