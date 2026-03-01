@@ -1,4 +1,6 @@
-﻿const routes = {
+﻿import { jobsData } from "./jobsData.js";
+
+const routes = {
   "/": { title: "Job Notification Tracker", key: "landing", notFound: false },
   "/dashboard": { title: "Dashboard", key: "dashboard", notFound: false },
   "/settings": { title: "Settings", key: "settings", notFound: false },
@@ -35,7 +37,7 @@ const TEST_CHECKLIST_ITEMS = [
   "Digest persists for the day",
   "No console errors on main pages"
 ];
-const jobs = Array.isArray(window.jobsData) ? window.jobsData : [];
+const jobs = Array.isArray(jobsData) ? jobsData : [];
 const jobsById = new Map(jobs.map((job) => [job.id, job]));
 
 const defaultPreferences = {
@@ -1524,5 +1526,8 @@ window.addEventListener("popstate", () => {
 
 renderRoute(window.location.pathname);
 closeMobileNav();
+
+
+
 
 

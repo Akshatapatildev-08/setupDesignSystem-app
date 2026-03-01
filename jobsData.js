@@ -1,5 +1,4 @@
-﻿(function () {
-  const companies = [
+﻿  const companies = [
     "Infosys",
     "TCS",
     "Wipro",
@@ -203,7 +202,7 @@
       .replace(/^-+|-+$/g, "");
   }
 
-  const jobs = Array.from({ length: 60 }, function (_, index) {
+  export const jobsData = Array.from({ length: 60 }, function (_, index) {
     const role = roleCatalog[index % roleCatalog.length];
     const company = companies[index % companies.length];
     const location = locations[(index * 2) % locations.length];
@@ -236,6 +235,3 @@
       description
     };
   });
-
-  window.jobsData = jobs;
-})();
