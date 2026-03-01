@@ -1,0 +1,17 @@
+{
+  "name": "setup-design-system",
+  "version": "1.0.0",
+  "description": "This foundation contains only the design system shell and primitives. No product feature workflows are included.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "vite"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "vite": "^7.3.1"
+  }
+}
