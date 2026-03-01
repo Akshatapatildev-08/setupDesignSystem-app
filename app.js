@@ -9,6 +9,7 @@
 
 const SAVED_STORAGE_KEY = "jobNotificationTracker.savedJobIds";
 const PREFERENCES_STORAGE_KEY = "jobTrackerPreferences";
+const DIGEST_STORAGE_PREFIX = "jobTrackerDigest_";
 const jobs = Array.isArray(window.jobsData) ? window.jobsData : [];
 const jobsById = new Map(jobs.map((job) => [job.id, job]));
 
@@ -150,6 +151,17 @@ function hasConfiguredPreferences(preferences) {
   );
 }
 
+function getLocalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getDigestStorageKey(dateKey) {
+  return `${DIGEST_STORAGE_PREFIX}${dateKey}`;
+}
+
 function formatPostedDaysAgo(days) {
   if (days === 0) {
     return "Posted today";
@@ -233,6 +245,156 @@ function calculateMatchScore(job, preferences) {
   }
 
   return Math.min(score, 100);
+}
+
+function computeScoresById(preferences) {
+  return new Map(jobs.map((job) => [job.id, calculateMatchScore(job, preferences)]));
+}
+
+function buildDigestFromPreferences(preferences) {
+  const scoresById = computeScoresById(preferences);
+  const ranked = jobs
+    .map((job) => ({
+      id: job.id,
+      matchScore: scoresById.get(job.id) || 0,
+      postedDaysAgo: job.postedDaysAgo
+    }))
+    .filter((job) => job.matchScore >= preferences.minMatchScore)
+    .sort((a, b) => {
+      if (b.matchScore !== a.matchScore) {
+        return b.matchScore - a.matchScore;
+      }
+
+      return a.postedDaysAgo - b.postedDaysAgo;
+    })
+    .slice(0, 10);
+
+  return {
+    date: getLocalDateKey(),
+    createdAt: new Date().toISOString(),
+    jobs: ranked
+  };
+}
+
+function loadDigestForDate(dateKey) {
+  try {
+    const raw = window.localStorage.getItem(getDigestStorageKey(dateKey));
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.jobs)) {
+      return null;
+    }
+
+    return parsed;
+  } catch (error) {
+    return null;
+  }
+}
+
+function saveDigestForDate(dateKey, digest) {
+  window.localStorage.setItem(getDigestStorageKey(dateKey), JSON.stringify(digest));
+}
+
+function getDigestJobs(digest) {
+  if (!digest || !Array.isArray(digest.jobs)) {
+    return [];
+  }
+
+  return digest.jobs
+    .map((entry) => {
+      const job = jobsById.get(entry.id);
+      if (!job) {
+        return null;
+      }
+
+      return {
+        ...job,
+        matchScore: entry.matchScore
+      };
+    })
+    .filter(Boolean);
+}
+
+function formatDigestDate(dateKey) {
+  const date = new Date(`${dateKey}T00:00:00`);
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "long",
+    year: "numeric"
+  }).format(date);
+}
+
+function buildDigestPlainText(digestJobs, dateKey) {
+  const lines = [
+    "Top 10 Jobs For You — 9AM Digest",
+    formatDigestDate(dateKey),
+    ""
+  ];
+
+  digestJobs.forEach((job, index) => {
+    lines.push(
+      `${index + 1}. ${job.title} | ${job.company}`,
+      `   ${job.location} | ${job.experience} | Match ${job.matchScore}`,
+      `   Apply: ${job.applyUrl}`,
+      ""
+    );
+  });
+
+  lines.push("This digest was generated based on your preferences.");
+  return lines.join("\n");
+}
+
+function renderDigestContent(digest, dateKey) {
+  const mount = document.querySelector("#digest-content");
+  if (!mount) {
+    return;
+  }
+
+  if (!digest) {
+    mount.innerHTML = "";
+    return;
+  }
+
+  const digestJobs = getDigestJobs(digest);
+
+  if (!digestJobs.length) {
+    mount.innerHTML = `
+      <div class="empty-state">
+        <p>No matching roles today. Check again tomorrow.</p>
+      </div>
+    `;
+    return;
+  }
+
+  mount.innerHTML = `
+    <section class="digest-card" aria-label="Daily digest email layout">
+      <header class="digest-card__header">
+        <h2>Top 10 Jobs For You — 9AM Digest</h2>
+        <p>${formatDigestDate(dateKey)}</p>
+      </header>
+
+      <div class="digest-list">
+        ${digestJobs
+          .map(
+            (job) => `
+              <article class="digest-item">
+                <h3>${escapeHtml(job.title)}</h3>
+                <p>${escapeHtml(job.company)}</p>
+                <p>${escapeHtml(job.location)} · ${escapeHtml(job.experience)}</p>
+                <p>Match Score: ${job.matchScore}</p>
+                <a class="btn btn-primary" href="${escapeHtml(job.applyUrl)}" target="_blank" rel="noopener noreferrer">Apply</a>
+              </article>
+            `
+          )
+          .join("")}
+      </div>
+
+      <footer class="digest-card__footer">This digest was generated based on your preferences.</footer>
+    </section>
+  `;
 }
 
 function getMatchTone(score) {
@@ -661,6 +823,114 @@ function renderDashboard(preferences) {
   renderDashboardList();
 }
 
+function renderDigest(preferences) {
+  const configured = hasConfiguredPreferences(preferences);
+  const todayKey = getLocalDateKey();
+  const existingDigest = loadDigestForDate(todayKey);
+
+  routeView.innerHTML = `
+    <section class="page" aria-labelledby="page-title">
+      <h1 id="page-title">Digest</h1>
+      <p class="lead">Daily ranked opportunities prepared for your review.</p>
+
+      ${
+        configured
+          ? ""
+          : '<div class="notice-banner">Set preferences to generate a personalized digest.</div>'
+      }
+
+      <div class="surface digest-actions">
+        <button id="generate-digest" class="btn btn-primary" type="button" ${configured ? "" : "disabled"}>
+          Generate Today's 9AM Digest (Simulated)
+        </button>
+        <button id="copy-digest" class="btn btn-secondary" type="button" ${existingDigest ? "" : "disabled"}>
+          Copy Digest to Clipboard
+        </button>
+        <button id="email-digest" class="btn btn-secondary" type="button" ${existingDigest ? "" : "disabled"}>
+          Create Email Draft
+        </button>
+      </div>
+
+      <p class="digest-note">Demo Mode: Daily 9AM trigger simulated manually.</p>
+
+      <section id="digest-content" aria-live="polite"></section>
+    </section>
+  `;
+
+  renderDigestContent(existingDigest, todayKey);
+  bindDigestInteractions(preferences, todayKey);
+}
+
+function bindDigestInteractions(preferences, dateKey) {
+  const generateButton = document.querySelector("#generate-digest");
+  const copyButton = document.querySelector("#copy-digest");
+  const emailButton = document.querySelector("#email-digest");
+
+  const getCurrentDigest = () => loadDigestForDate(dateKey);
+
+  const refreshDigestAndActions = (digest) => {
+    renderDigestContent(digest, dateKey);
+    const hasDigest = Boolean(digest);
+    if (copyButton) {
+      copyButton.disabled = !hasDigest;
+    }
+    if (emailButton) {
+      emailButton.disabled = !hasDigest;
+    }
+  };
+
+  if (generateButton) {
+    generateButton.addEventListener("click", () => {
+      const existing = getCurrentDigest();
+      if (existing) {
+        refreshDigestAndActions(existing);
+        return;
+      }
+
+      const digest = buildDigestFromPreferences(preferences);
+      saveDigestForDate(dateKey, digest);
+      refreshDigestAndActions(digest);
+    });
+  }
+
+  if (copyButton) {
+    copyButton.addEventListener("click", async () => {
+      const digest = getCurrentDigest();
+      if (!digest) {
+        return;
+      }
+
+      const digestJobs = getDigestJobs(digest);
+      const text = buildDigestPlainText(digestJobs, dateKey);
+
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (error) {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand("copy");
+        textArea.remove();
+      }
+    });
+  }
+
+  if (emailButton) {
+    emailButton.addEventListener("click", () => {
+      const digest = getCurrentDigest();
+      if (!digest) {
+        return;
+      }
+
+      const digestJobs = getDigestJobs(digest);
+      const body = encodeURIComponent(buildDigestPlainText(digestJobs, dateKey));
+      const subject = encodeURIComponent("My 9AM Job Digest");
+      window.location.href = `mailto:?subject=${subject}&body=${body}`;
+    });
+  }
+}
+
 function renderRoute(pathname) {
   const normalized = normalizePath(pathname);
   const route = getRoute(normalized);
@@ -703,14 +973,7 @@ function renderRoute(pathname) {
       </section>
     `;
   } else if (route.key === "digest") {
-    routeView.innerHTML = `
-      <section class="page" aria-labelledby="page-title">
-        <h1 id="page-title">Digest</h1>
-        <div class="empty-state">
-          <p>Your daily summary will appear here when digest generation is added in the next step.</p>
-        </div>
-      </section>
-    `;
+    renderDigest(preferences);
   } else if (route.key === "proof") {
     routeView.innerHTML = `
       <section class="page" aria-labelledby="page-title">
