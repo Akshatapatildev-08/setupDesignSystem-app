@@ -4,7 +4,9 @@
   "/settings": { title: "Settings", key: "settings", notFound: false },
   "/saved": { title: "Saved Jobs", key: "saved", notFound: false },
   "/digest": { title: "Daily Digest", key: "digest", notFound: false },
-  "/proof": { title: "Proof", key: "proof", notFound: false }
+  "/proof": { title: "Proof", key: "proof", notFound: false },
+  "/jt/07-test": { title: "Test Checklist", key: "test-checklist", notFound: false },
+  "/jt/08-ship": { title: "Ship Gate", key: "ship-gate", notFound: false }
 };
 
 const SAVED_STORAGE_KEY = "jobNotificationTracker.savedJobIds";
@@ -12,7 +14,7 @@ const PREFERENCES_STORAGE_KEY = "jobTrackerPreferences";
 const DIGEST_STORAGE_PREFIX = "jobTrackerDigest_";
 const STATUS_STORAGE_KEY = "jobTrackerStatus";
 const STATUS_UPDATES_STORAGE_KEY = "jobTrackerStatusUpdates";
-
+const TEST_STATUS_STORAGE_KEY = "jobTrackerTestStatus";
 const STATUS = {
   NOT_APPLIED: "Not Applied",
   APPLIED: "Applied",
@@ -21,6 +23,18 @@ const STATUS = {
 };
 
 const STATUS_OPTIONS = [STATUS.NOT_APPLIED, STATUS.APPLIED, STATUS.REJECTED, STATUS.SELECTED];
+const TEST_CHECKLIST_ITEMS = [
+  "Preferences persist after refresh",
+  "Match score calculates correctly",
+  "\"Show only matches\" toggle works",
+  "Save job persists after refresh",
+  "Apply opens in new tab",
+  "Status update persists after refresh",
+  "Status filter works correctly",
+  "Digest generates top 10 by score",
+  "Digest persists for the day",
+  "No console errors on main pages"
+];
 const jobs = Array.isArray(window.jobsData) ? window.jobsData : [];
 const jobsById = new Map(jobs.map((job) => [job.id, job]));
 
@@ -161,6 +175,37 @@ function hasConfiguredPreferences(preferences) {
     preferences.experienceLevel !== "" ||
     preferences.skills.length > 0
   );
+}
+
+function loadTestStatus() {
+  try {
+    const raw = window.localStorage.getItem(TEST_STATUS_STORAGE_KEY);
+    if (!raw) {
+      return Array(TEST_CHECKLIST_ITEMS.length).fill(false);
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return Array(TEST_CHECKLIST_ITEMS.length).fill(false);
+    }
+
+    return TEST_CHECKLIST_ITEMS.map((_, index) => Boolean(parsed[index]));
+  } catch (error) {
+    return Array(TEST_CHECKLIST_ITEMS.length).fill(false);
+  }
+}
+
+function saveTestStatus(values) {
+  const normalized = TEST_CHECKLIST_ITEMS.map((_, index) => Boolean(values[index]));
+  window.localStorage.setItem(TEST_STATUS_STORAGE_KEY, JSON.stringify(normalized));
+}
+
+function getPassedTestCount(values) {
+  return values.filter(Boolean).length;
+}
+
+function areAllTestsPassed(values) {
+  return getPassedTestCount(values) === TEST_CHECKLIST_ITEMS.length;
 }
 
 function loadStatusMap() {
@@ -1244,6 +1289,123 @@ function bindDigestInteractions(preferences, dateKey) {
   }
 }
 
+function renderTestChecklist() {
+  const status = loadTestStatus();
+  const passed = getPassedTestCount(status);
+
+  routeView.innerHTML = `
+    <section class="page" aria-labelledby="page-title">
+      <h1 id="page-title">Built-In Test Checklist</h1>
+      <p class="lead">Track readiness before shipping.</p>
+
+      <section class="surface test-summary">
+        <p class="test-summary__count">Tests Passed: ${passed} / ${TEST_CHECKLIST_ITEMS.length}</p>
+        ${passed < TEST_CHECKLIST_ITEMS.length ? '<p class="test-summary__warning">Resolve all issues before shipping.</p>' : ""}
+      </section>
+
+      <section class="surface test-list" id="test-list">
+        ${TEST_CHECKLIST_ITEMS.map((item, index) => `
+          <label class="test-item">
+            <input type="checkbox" data-test-index="${index}" ${status[index] ? "checked" : ""} />
+            <span>${escapeHtml(item)}</span>
+            <span class="test-tip" title="How to test">How to test</span>
+          </label>
+        `).join("")}
+      </section>
+
+      <div class="form-actions">
+        <button class="btn btn-secondary" type="button" id="reset-test-status">Reset Test Status</button>
+      </div>
+    </section>
+  `;
+
+  bindTestChecklist();
+}
+
+function updateTestSummary(values) {
+  const passed = getPassedTestCount(values);
+  const countNode = document.querySelector(".test-summary__count");
+  const warningNode = document.querySelector(".test-summary__warning");
+
+  if (countNode) {
+    countNode.textContent = `Tests Passed: ${passed} / ${TEST_CHECKLIST_ITEMS.length}`;
+  }
+
+  if (passed < TEST_CHECKLIST_ITEMS.length) {
+    if (!warningNode) {
+      const summary = document.querySelector(".test-summary");
+      if (summary) {
+        const p = document.createElement("p");
+        p.className = "test-summary__warning";
+        p.textContent = "Resolve all issues before shipping.";
+        summary.appendChild(p);
+      }
+    }
+  } else if (warningNode) {
+    warningNode.remove();
+  }
+}
+
+function bindTestChecklist() {
+  const list = document.querySelector("#test-list");
+  const resetButton = document.querySelector("#reset-test-status");
+  if (!list) {
+    return;
+  }
+
+  list.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) {
+      return;
+    }
+
+    const idx = Number(target.getAttribute("data-test-index"));
+    if (!Number.isFinite(idx)) {
+      return;
+    }
+
+    const current = loadTestStatus();
+    current[idx] = target.checked;
+    saveTestStatus(current);
+    updateTestSummary(current);
+  });
+
+  if (resetButton) {
+    resetButton.addEventListener("click", () => {
+      const reset = Array(TEST_CHECKLIST_ITEMS.length).fill(false);
+      saveTestStatus(reset);
+      const boxes = list.querySelectorAll('input[type="checkbox"]');
+      boxes.forEach((box) => {
+        box.checked = false;
+      });
+      updateTestSummary(reset);
+    });
+  }
+}
+
+function renderShipGate() {
+  const status = loadTestStatus();
+  const passed = getPassedTestCount(status);
+  const unlocked = areAllTestsPassed(status);
+
+  routeView.innerHTML = `
+    <section class="page" aria-labelledby="page-title">
+      <h1 id="page-title">Ship Gate</h1>
+      ${
+        unlocked
+          ? `<section class="surface">
+              <p>All tests completed. Shipping gate unlocked.</p>
+            </section>`
+          : `<section class="surface ship-lock">
+              <p>Complete all tests before shipping.</p>
+              <p>Current status: ${passed} / ${TEST_CHECKLIST_ITEMS.length} tests passed.</p>
+              <a class="btn btn-secondary" href="/jt/07-test" data-route>Go to Test Checklist</a>
+            </section>`
+      }
+    </section>
+  `;
+}
+
 function renderRoute(pathname) {
   const normalized = normalizePath(pathname);
   const route = getRoute(normalized);
@@ -1280,6 +1442,10 @@ function renderRoute(pathname) {
     renderSaved(preferences);
   } else if (route.key === "digest") {
     renderDigest(preferences);
+  } else if (route.key === "test-checklist") {
+    renderTestChecklist();
+  } else if (route.key === "ship-gate") {
+    renderShipGate();
   } else if (route.key === "proof") {
     routeView.innerHTML = `
       <section class="page" aria-labelledby="page-title">
@@ -1358,3 +1524,5 @@ window.addEventListener("popstate", () => {
 
 renderRoute(window.location.pathname);
 closeMobileNav();
+
+

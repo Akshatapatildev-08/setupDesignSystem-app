@@ -512,6 +512,41 @@ a {
   transform: translateY(8px);
 }
 
+.test-summary__count {
+  margin: 0;
+  color: var(--color-text);
+}
+
+.test-summary__warning {
+  margin: var(--space-1) 0 0;
+  color: var(--color-accent);
+}
+
+.test-list {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.test-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-1);
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+}
+
+.test-tip {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  cursor: help;
+}
+
+.ship-lock p {
+  margin: 0 0 var(--space-2);
+}
+
 .match-badge {
   border-radius: var(--radius);
   padding: var(--space-1) var(--space-2);
