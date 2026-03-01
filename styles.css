@@ -143,6 +143,68 @@ a {
   color: var(--color-muted);
 }
 
+.page .lead {
+  margin-bottom: var(--space-4);
+}
+
+.surface {
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  background: var(--color-bg);
+}
+
+.field-stack {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.field {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.field label {
+  font-size: 1rem;
+  color: var(--color-text);
+}
+
+.field .placeholder-input,
+.field .placeholder-select {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-muted);
+  padding: var(--space-2);
+  font: inherit;
+}
+
+.btn {
+  display: inline-block;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-2);
+  font: inherit;
+  line-height: 1.6;
+  cursor: pointer;
+  transition: background-color var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.btn-primary {
+  background: var(--color-accent);
+  color: var(--color-bg);
+}
+
+.btn-primary:hover {
+  background: var(--color-text);
+}
+
+.empty-state {
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+}
+
 @media (max-width: 900px) {
   .top-nav {
     grid-template-columns: 1fr auto;
