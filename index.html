@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Job Notification App - Design System Foundation</title>
+  <title>Job Notification App</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,600;6..72,700&family=Manrope:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -11,109 +11,41 @@
 </head>
 <body>
   <div class="app-shell">
-    <header class="top-bar" role="banner">
-      <div class="top-bar__brand">Job Notification App</div>
-      <div class="top-bar__progress" aria-label="Progress indicator">Step 1 / 4</div>
-      <div class="top-bar__status" role="status" aria-label="Current status">Not Started</div>
+    <header class="top-nav" role="banner">
+      <a class="brand" href="/" data-route>Job Notification App</a>
+
+      <button
+        class="menu-toggle"
+        type="button"
+        aria-label="Toggle navigation menu"
+        aria-expanded="false"
+        aria-controls="mobile-nav"
+      >
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+
+      <nav class="desktop-nav" aria-label="Primary navigation">
+        <a href="/dashboard" data-route>Dashboard</a>
+        <a href="/saved" data-route>Saved</a>
+        <a href="/digest" data-route>Digest</a>
+        <a href="/settings" data-route>Settings</a>
+        <a href="/proof" data-route>Proof</a>
+      </nav>
+
+      <nav id="mobile-nav" class="mobile-nav" aria-label="Mobile navigation" hidden>
+        <a href="/dashboard" data-route>Dashboard</a>
+        <a href="/saved" data-route>Saved</a>
+        <a href="/digest" data-route>Digest</a>
+        <a href="/settings" data-route>Settings</a>
+        <a href="/proof" data-route>Proof</a>
+      </nav>
     </header>
 
-    <section class="context-header" aria-labelledby="page-title">
-      <h1 id="page-title">Design System Foundation</h1>
-      <p>Calm, cohesive primitives for a premium job notification experience.</p>
-    </section>
-
-    <main class="workspace" aria-label="Primary workspace and supporting panel">
-      <section class="workspace__primary" aria-label="Primary workspace">
-        <article class="card">
-          <h2>Color Tokens</h2>
-          <p>Maximum four core UI colors are used in this canvas, with semantic success and warning tokens defined for state messaging.</p>
-          <div class="swatch-grid">
-            <div class="swatch">
-              <span class="swatch__chip swatch__chip--bg"></span>
-              <div>#F7F6F3 Background</div>
-            </div>
-            <div class="swatch">
-              <span class="swatch__chip swatch__chip--text"></span>
-              <div>#111111 Primary Text</div>
-            </div>
-            <div class="swatch">
-              <span class="swatch__chip swatch__chip--accent"></span>
-              <div>#8B0000 Accent</div>
-            </div>
-            <div class="swatch">
-              <span class="swatch__chip swatch__chip--muted"></span>
-              <div>Muted Utility Tone</div>
-            </div>
-          </div>
-          <p class="measure">Success token: muted green. Warning token: muted amber.</p>
-        </article>
-
-        <article class="card">
-          <h2>Typography & Spacing</h2>
-          <p class="measure">Headings use a confident serif. Body copy uses a clean sans-serif at 16-18px with 1.6-1.8 line-height and a max readable width of 720px.</p>
-          <div class="token-row">
-            <span class="token">8px</span>
-            <span class="token">16px</span>
-            <span class="token">24px</span>
-            <span class="token">40px</span>
-            <span class="token">64px</span>
-          </div>
-        </article>
-
-        <article class="card">
-          <h2>Component Baseline</h2>
-          <p>Consistent radius, subtle borders, clear focus states, and restrained interaction timing.</p>
-          <div class="controls-row">
-            <button class="btn btn--primary" type="button">Primary Action</button>
-            <button class="btn btn--secondary" type="button">Secondary Action</button>
-          </div>
-          <label class="field" for="email">
-            <span>Input Example</span>
-            <input id="email" type="email" placeholder="name@company.com" />
-          </label>
-        </article>
-
-        <article class="card state state--error" role="alert">
-          <h2>Error State</h2>
-          <p>We could not load notifications because the API key is missing. Add a valid key in settings and retry.</p>
-        </article>
-
-        <article class="card state state--empty">
-          <h2>Empty State</h2>
-          <p>No notification rules exist yet. Create your first rule to start receiving relevant job alerts.</p>
-        </article>
-      </section>
-
-      <aside class="workspace__secondary" aria-label="Secondary panel">
-        <section class="card">
-          <h2>Step Explanation</h2>
-          <p>This panel defines implementation context without crowding the primary work area.</p>
-        </section>
-
-        <section class="card">
-          <h2>Copyable Prompt</h2>
-          <pre class="prompt-box"><code>Use the design tokens and component primitives from this foundation.
-Do not introduce new spacing values, random typography, or visual effects.</code></pre>
-          <button class="btn btn--secondary" type="button">Copy Prompt</button>
-        </section>
-
-        <section class="card">
-          <h2>Status Preview</h2>
-          <div class="badge-row">
-            <span class="status status--not-started">Not Started</span>
-            <span class="status status--in-progress">In Progress</span>
-            <span class="status status--shipped">Shipped</span>
-          </div>
-        </section>
-      </aside>
-    </main>
-
-    <footer class="proof-footer" aria-label="Proof footer checklist">
-      <label><input type="checkbox" /> UI Built</label>
-      <label><input type="checkbox" /> Logic Working</label>
-      <label><input type="checkbox" /> Test Passed</label>
-      <label><input type="checkbox" /> Deployed</label>
-    </footer>
+    <main id="route-view" class="route-view" aria-live="polite"></main>
   </div>
+
+  <script src="./app.js" defer></script>
 </body>
 </html>
